@@ -8,80 +8,89 @@ published: false
 
 ## はじめに
 
-こんにちは。HRBrainで学習管理サービス[「HRBrain ラーニング」](https://www.hrbrain.jp/lms)の開発に関わっている渡邉です。
+こんにちは。HRBrainで学習管理サービス[「HRBrain ラーニング」](https://www.hrbrain.jp/lms)の開発をしている渡邉です。
 
-最近、学習管理システムにおける動画コンテンツの配信機能を、HLS(HTTP Live Streaming)を用いて実装しました。当初はシンプルに実装できると考えていましたが、実際には認証対応や状態管理など、HLS特有の課題に直面することになりました。
+先日、動画コンテンツの配信機能をHLS(HTTP Live Streaming)で実装しましたが、想像以上に苦戦しました。「react-playerを使えばすぐできるだろう」と思っていたら、Cookie認証が効かなかったり、状態管理で詰まったり。結局、公式ドキュメントだけでは分からない実装の工夫がいくつも必要でした。
 
-この記事では、`react-player 3.3.3`を使用したHLS動画ストリーミング機能の実装について、実際のコードと設定を交えながら解説します。特に、Cookie認証への対応や再生状態の管理といった、本番環境で必要になる実践的なテクニックにフォーカスします。
+この記事では、そんな試行錯誤の末にたどり着いた`react-player 3.3.3`を使ったHLS動画プレーヤーの実装方法を書いていきます。Cookie認証の対応方法や、バージョン3系での状態管理のやり方など、実際に動くコードとセットで紹介します。
 
-なお、本記事は**Reactを使ったフロントエンド実装**に焦点を当てています。HLS動画ファイルの生成やサーバー側の配信設定については扱いませんので、ご了承ください。
+なお、この記事ではReactのフロントエンド実装だけを扱います。HLS動画ファイルの生成方法やサーバー側の配信設定については触れません。
 
 https://github.com/cookpete/react-player
 
-## HLSとは
+## HLSって何?
 
-HLS(HTTP Live Streaming)は、動画をスムーズに配信するための技術です。
+HLS(HTTP Live Streaming)は、動画配信の仕組みのひとつです。
 
-通常の動画ファイルをそのまま配信すると、ファイルサイズが大きすぎてダウンロードに時間がかかってしまいます。HLSでは、動画を数秒ごとの小さなファイル(セグメント)に分割し、視聴者が見ている部分から順番に配信していきます。これにより、待ち時間なく動画の再生を開始できます。
+普通に動画ファイルを配信しようとすると、ファイルサイズが大きくて読み込みに時間がかかります。HLSは動画を数秒単位の小さなファイル(セグメント)に分割して、視聴者が見ている部分から順番に配信します。これにより、最初の読み込みを待たずに再生を始められます。
 
-また、ネットワークの速度に応じて自動的に画質を調整する機能もあるため、WiFi環境でも4G回線でもストレスなく視聴できるのが特徴です。YouTubeやNetflixなどの動画配信サービスでも、HLSや類似の技術(DASH)が使われています。
+さらに便利なのが、ネットワークの速度に合わせて自動で画質を変えてくれること。WiFiでも4G回線でも、それぞれの環境で快適に見られます。YouTubeやNetflixも、HLSや似たような技術(DASH)を使っています。
 
-## react-playerを選んだ理由
+## なぜreact-playerを選んだか
 
-HLS動画を再生するためのReactライブラリには、いくつかの選択肢があります。代表的なものとして:
+ReactでHLS動画を再生する方法は、実はいくつかあります:
 
-- **[hls.js](https://github.com/video-dev/hls.js)**: 低レベルのHLS再生ライブラリで、細かい制御が可能
-- **[video.js](https://github.com/videojs/video.js)**: プラグインシステムを持つ包括的なビデオプレーヤー
-- **[react-player](https://github.com/cookpete/react-player)**: 複数の動画プラットフォームに対応した抽象化レイヤー
+- **[hls.js](https://github.com/video-dev/hls.js)**: HLS再生の本格的なライブラリ。GitHubスター数も多く、細かい制御ができる
+- **[video.js](https://github.com/videojs/video.js)**: 老舗の動画プレーヤー。npmダウンロード数も多く、プラグインが豊富
+- **[react-player](https://github.com/cookpete/react-player)**: いろんな動画ソース(YouTube、HLSなど)を同じように扱えるラッパーライブラリ
 
-今回、私たちが`react-player`を選択した主な理由は以下の3点です:
+どれも人気があって実績のあるライブラリですが、最終的に`react-player`を選んだのは、次の3つの理由からです:
 
-### 1. 統一されたAPIと開発体験
+### 1. Reactとの統合を任せられる
 
-`react-player`は、HLSだけでなくYouTube、Vimeo、通常のMP4ファイルなど、多様な動画ソースに対して**統一されたReactコンポーネントインターフェース**を提供します。
+`react-player`は裏側で`hls.js`を使っています。`hls.js`は確かに強力なライブラリですが、それを直接Reactで使おうとすると、いろいろと面倒なことがあります。
 
-```tsx
-// react-playerなら、ソースの種類に関係なく同じインターフェースで扱える
-<ReactPlayer
-    src={videoUrl} // HLS, YouTube, MP4など何でも対応
-    controls={true}
-    onPlay={handlePlay}
-/>
-```
+例えば:
+- コンポーネントのマウント時にHLSインスタンスを初期化
+- アンマウント時に適切にクリーンアップ
+- video要素への参照を管理
+- エラーハンドリングの実装
+- イベントリスナーの登録と解除
 
-将来的に動画ソースを切り替える可能性がある場合、この抽象化は大きなメリットとなります。実際、私たちのプロジェクトでもYouTube動画とHLS動画を併用しており、コンポーネントの実装を統一できました。
+こういったReactアプリケーションとの統合部分を、`react-player`がすべて面倒を見てくれます。自分で実装すると地味に大変で、しかもバグが混入しやすい部分です。
 
-### 2. hls.jsの内部利用と適切な抽象化
-
-`react-player`は内部で`hls.js`を使用しています。つまり、`hls.js`の強力な機能を活用しつつ、React向けに使いやすくラップされた形で利用できます。
-
-重要なのは、必要に応じて`config.hls`オプションを通じて**hls.jsの詳細な設定にもアクセスできる**点です:
+それでいて、必要なときは`config.hls`オプションで`hls.js`の細かい設定にもアクセスできます:
 
 ```tsx
 <ReactPlayer
     config={{
         hls: {
-            // hls.jsの設定を直接カスタマイズ可能
+            // hls.jsの設定を直接いじれる
             xhrSetup: (xhr, url) => { /* ... */ },
-            // その他のhls.js設定も指定可能
+            // 他の設定もいろいろ指定できる
         }
     }}
 />
 ```
 
-純粋な`hls.js`を使う場合は、Reactのライフサイクルに合わせた初期化・クリーンアップ処理を自分で実装する必要がありますが、`react-player`はこれらを内部で適切に処理してくれます。
+つまり、「Reactとの統合はライブラリに任せて、ビジネスロジックの実装に集中できる」というのが、`react-player`を選んだ一番の理由です。
 
-### 3. メンテナンスとコミュニティ
+### 2. 複数の動画フォーマットに対応している
 
-`react-player`は活発にメンテナンスされており、npm週間ダウンロード数も100万を超える人気ライブラリです。issue対応も比較的早く、多くの実績があることから、本番環境での採用に安心感がありました。
+私たちのプロジェクトでは、HLS動画だけでなくYouTube動画も再生したいという要件がありました。`react-player`は、HLS、YouTube、Vimeo、MP4ファイルなど、さまざまな動画フォーマットに対応しており、この点を満たしていました。
 
-## react-playerの基本的な使い方
+```tsx
+// HLSでもYouTubeでも同じコンポーネントで扱える
+<ReactPlayer
+    src={videoUrl} // HLS URL、YouTube URL、どちらもOK
+    controls={true}
+    onPlay={handlePlay}
+/>
+```
 
-ここからは、実際のプロジェクトで使用している実装をベースに、`react-player`を使ったHLS動画プレーヤーの実装方法を解説します。
+もし`hls.js`だけを使っていたら、YouTube動画用には別のライブラリを組み合わせる必要があり、コンポーネントの実装も複雑になっていたでしょう。`react-player`なら、動画ソースに関わらず実装を統一できます。
+
+### 3. メンテナンスされてる安心感
+
+`react-player`はちゃんとメンテナンスされてて、週に100万ダウンロードもされてる人気ライブラリです。issueへの対応も割と早いし、実績も十分。本番で使うなら、この安心感は大事です。
+
+## 実際に使ってみる
+
+ここからは、実際に私たちのプロジェクトで使ってる実装をベースに、具体的な使い方を見ていきます。
 
 ### パッケージのインストール
 
-まず、`react-player`をインストールします:
+まずはインストールから:
 
 ```bash
 npm install react-player@3.3.3
@@ -89,37 +98,37 @@ npm install react-player@3.3.3
 yarn add react-player@3.3.3
 ```
 
-本記事執筆時点での最新安定版は`3.3.3`です。バージョンアップ時には[リリースノート](https://github.com/cookpete/react-player/releases)を確認し、破壊的変更がないか注意してください。
+この記事を書いてる時点では`3.3.3`が最新です。バージョンを上げるときは[リリースノート](https://github.com/cookpete/react-player/releases)を確認して、破壊的変更がないかチェックしてください。
 
-#### バージョン2系から3系への移行時の注意点
+#### v2からv3への移行で気をつけること
 
-`react-player`のv2系からv3系への移行では、**状態管理の方式が大きく変更**されています。
+v2からv3にバージョンアップすると、状態管理の仕組みが結構変わります。
 
-v2系では内部状態として管理されていた再生速度やボリュームなどの設定が、**v3系では外部から明示的に渡す必要があります**:
+v2では再生速度やボリュームをコンポーネント内部で勝手に管理してくれていましたが、v3では外から明示的に渡さないといけなくなりました:
 
 ```tsx
-// v2系: 内部で状態管理される（設定不要）
+// v2: 勝手に管理してくれた
 <ReactPlayer url={src} controls={true} />
 
-// v3系: 外部から状態を渡す必要がある
+// v3: 自分で渡す必要がある
 <ReactPlayer
     src={src}
     controls={true}
-    playbackRate={playbackRate}  // 明示的に指定が必要
-    volume={volume}              // 明示的に指定が必要
-    muted={muted}                // 明示的に指定が必要
+    playbackRate={playbackRate}  // 自分で管理して渡す
+    volume={volume}              // 自分で管理して渡す
+    muted={muted}                // 自分で管理して渡す
 />
 ```
 
-この変更により、親コンポーネント側で状態管理を行い、プレーヤーに対して制御的に状態を渡すアーキテクチャに変わりました。これは、Reactの「制御されたコンポーネント(Controlled Components)」のパターンに沿った設計です。
+つまり、親コンポーネント側で状態を持って、それをプレーヤーに渡すスタイルになったわけです。Reactの「Controlled Components」パターンです。
 
-実際のプロジェクトでも、この変更に対応するため、`useVideoPlayer`カスタムフックを実装し、状態管理とイベントハンドラーを集約しています。詳細は後述の「再生速度とボリュームの管理」セクションで解説します。
+私たちのプロジェクトでも、この対応で`useVideoPlayer`っていうカスタムフックを作って、状態管理とイベントハンドラーをまとめました。詳しくは後の「再生速度とボリュームの管理」で説明します。
 
-その他の変更点（プロパティ名の変更、設定構造の変更など）については、公式の[Migration Guide](https://github.com/cookpete/react-player/blob/master/MIGRATION.md)を参照してください。
+他にもプロパティ名の変更とかいろいろあるので、公式の[Migration Guide](https://github.com/cookpete/react-player/blob/master/MIGRATION.md)も見ておくと良いです。
 
-### 基本的なコンポーネント実装
+### まずは最小構成で動かしてみる
 
-最もシンプルな実装は以下のようになります:
+一番シンプルに書くとこんな感じです:
 
 ```tsx
 import ReactPlayer from 'react-player'
@@ -136,11 +145,11 @@ export const VideoPlayer = (props) => {
 }
 ```
 
-しかし、本番環境で使用するには、これだけでは不十分です。以下、実践的な実装のポイントを解説します。
+ただ、本番で使うにはこれだけじゃ足りません。実際に必要になるポイントを見ていきます。
 
-### 1. HLS設定のカスタマイズ
+### 1. HLSの設定をカスタマイズする
 
-HLS動画を扱う際は、`config.hls`オプションを使用して詳細な設定を行います:
+HLS動画を扱うときは、`config.hls`で細かい設定ができます:
 
 ```tsx
 <ReactPlayer
@@ -151,19 +160,19 @@ HLS動画を扱う際は、`config.hls`オプションを使用して詳細な�
     config={{
         hls: {
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-                // XMLHttpRequestのセットアップをカスタマイズ
-                // 詳細は後述の「認証対応の工夫」セクションで解説
+                // リクエストする前にXMLHttpRequestをいじれる
+                // 詳細は後で説明します
             }
         }
     }}
 />
 ```
 
-`xhrSetup`関数では、HLSセグメントやマニフェストファイルを取得する際の`XMLHttpRequest`オブジェクトを、リクエスト送信前にカスタマイズできます。これは認証ヘッダーの追加やURLの書き換えなど、本番環境で必須となる処理を実装する場所です。
+この`xhrSetup`関数で、HLSのファイルを取得する直前に`XMLHttpRequest`をカスタマイズできます。認証ヘッダーを追加したり、URLを書き換えたり、本番環境で必要な処理はここでやります。
 
-### 2. イベントハンドリング
+### 2. 動画の状態を追跡する
 
-動画の状態を追跡するため、各種イベントハンドラーを設定します:
+動画で何が起きてるか知りたいときは、イベントハンドラーを設定します:
 
 ```tsx
 <ReactPlayer
@@ -171,27 +180,21 @@ HLS動画を扱う際は、`config.hls`オプションを使用して詳細な�
     width="100%"
     height="100%"
     controls={true}
-    // 再生開始時(初回のみ)
     onStart={() => {
         console.log('動画が開始されました')
     }}
-    // 再生中
     onPlay={() => {
         console.log('再生中')
     }}
-    // 一時停止
     onPause={() => {
         console.log('一時停止')
     }}
-    // 再生終了
     onEnded={() => {
         console.log('再生が終了しました')
     }}
-    // シーク操作開始
     onSeeking={() => {
         console.log('シーク中...')
     }}
-    // シーク操作完了
     onSeeked={() => {
         console.log('シーク完了')
     }}
@@ -205,35 +208,35 @@ HLS動画を扱う際は、`config.hls`オプションを使用して詳細な�
 />
 ```
 
-これらのイベントは、学習管理システムにおける「視聴履歴の記録」「視聴時間の計測」「レポート機能」などを実装する際に不可欠です。
+学習管理システムで「誰がどこまで見たか」を記録したり、視聴時間を計測したりするなら、こういったイベントが必須です。
 
-### 3. 再生速度とボリュームの管理
+### 3. 再生速度とボリュームを覚えておく
 
-ユーザーが設定した再生速度やボリュームを保持し、次回の動画再生時にも適用するには、状態管理が必要です:
+ユーザーが設定した再生速度やボリュームを、次の動画でも使えるようにするには、状態管理が必要です:
 
 ```tsx
 import { useState } from 'react'
 import ReactPlayer from 'react-player'
 
 export const VideoPlayer = ({ src }: { src: string }) => {
-    // 再生設定の状態管理
+    // 設定を保持しておく
     const [settings, setSettings] = useState({
-        playbackRate: 1.0,  // 再生速度(0.5倍速〜2倍速など)
-        volume: 1.0,        // ボリューム(0.0〜1.0)
-        muted: false        // ミュート状態
+        playbackRate: 1.0,  // 再生速度
+        volume: 1.0,        // ボリューム
+        muted: false        // ミュート
     })
 
-    // 再生速度変更時のハンドラー
+    // 再生速度が変わったら状態を更新
     const handleRateChange = (event: React.SyntheticEvent<HTMLVideoElement>) => {
         const target = event.currentTarget
         setSettings(prev => ({
             ...prev,
             playbackRate: target.playbackRate
         }))
-        // ローカルストレージに保存するなどの処理も可能
+        // ここでlocalStorageに保存とかもできる
     }
 
-    // ボリューム変更時のハンドラー
+    // ボリュームが変わったら状態を更新
     const handleVolumeChange = (event: React.SyntheticEvent<HTMLVideoElement>) => {
         const target = event.currentTarget
         setSettings(prev => ({
@@ -266,19 +269,19 @@ export const VideoPlayer = ({ src }: { src: string }) => {
 }
 ```
 
-この実装により、ユーザーが再生速度を変更した際にその値を保持し、次の動画でも同じ設定を適用できます。
+こうしておけば、ユーザーが再生速度を変えたら、その設定を覚えておいて次の動画でも使えます。
 
-## 認証対応の工夫
+## Cookie認証で詰まった話
 
-本番環境でHLS動画を配信する場合、多くのケースで認証が必要になります。私たちのプロジェクトでは、Cookie-based認証を採用しており、APIリクエスト時にCookieを送信する必要がありました。
+本番環境で動画を配信するなら、だいたい認証が必要です。私たちのプロジェクトではCookie認証を使っていましたが、これが最初うまく動かなくて困りました。
 
-### 課題: デフォルトではCookieが送信されない
+### 何が問題だったか
 
-HLSプレーヤーがマニフェストファイルやセグメントファイルを取得する際、デフォルトの設定では`XMLHttpRequest`の[`withCredentials`](https://developer.mozilla.org/ja/docs/Web/API/XMLHttpRequest/withCredentials)が`false`となっており、Cookieが送信されません。これにより、認証エラー(401 Unauthorized)が発生します。
+HLSプレーヤーが動画ファイルを取得するとき、デフォルトでは`XMLHttpRequest`の[`withCredentials`](https://developer.mozilla.org/ja/docs/Web/API/XMLHttpRequest/withCredentials)が`false`になっています。つまり、Cookieが送られません。当然、認証エラー(401)が返ってきます。
 
-### 解決策: xhrSetupでwithCredentialsを有効化
+### どう解決したか
 
-`config.hls.xhrSetup`を使用して、すべてのHLS関連リクエストで`withCredentials`を`true`に設定します:
+`config.hls.xhrSetup`で、すべてのリクエストに`withCredentials = true`を設定すればOKです:
 
 ```tsx
 <ReactPlayer
@@ -289,8 +292,7 @@ HLSプレーヤーがマニフェストファイルやセグメントファイ�
     config={{
         hls: {
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-                // APIリクエスト時にCookieを送信しないと認証エラーが発生するため、
-                // withCredentialsをtrueに設定
+                // Cookieを送信するように設定
                 xhr.withCredentials = true
             }
         }
@@ -298,41 +300,32 @@ HLSプレーヤーがマニフェストファイルやセグメントファイ�
 />
 ```
 
-これにより、マニフェストファイル(`.m3u8`)とセグメントファイル(`.ts`)の両方の取得時にCookieが送信されるようになります。
+これで、マニフェストファイル(`.m3u8`)もセグメントファイル(`.ts`)も、Cookieが送られるようになります。
 
-また、クライアント側で`withCredentials = true`を設定した場合、サーバー側でも対応するCORS設定が必要です。
+ただし、クライアントで`withCredentials = true`にしたら、サーバー側もCORSの設定が必要です。
 
 ```
-Access-Control-Allow-Origin: https://your-domain.com (ワイルドカード*は使用不可)
+Access-Control-Allow-Origin: https://your-domain.com
 Access-Control-Allow-Credentials: true
 ```
 
-`withCredentials`を使用する場合、`Access-Control-Allow-Origin`にワイルドカード(`*`)は使用できないため、具体的なオリジンを指定する必要があります。
+`withCredentials`を使う場合、`Access-Control-Allow-Origin`にワイルドカード(`*`)は使えません。ちゃんとドメインを指定してください。
 
 ## まとめ
 
-本記事では、`react-player 3.3.3`を使用したHLS動画ストリーミング機能の実装について、実際のプロジェクトでの経験を基に解説しました。
+`react-player 3.3.3`を使ったHLS動画プレーヤーの実装について、実際に詰まったところと解決方法を書いてきました。
 
-### 重要なポイント
+### ポイント
 
-1. **react-playerの選定理由**
-   - 統一されたAPIによる開発体験の向上
-   - hls.jsの機能を活用しつつ、React向けに最適化
-   - 活発なメンテナンスとコミュニティサポート
+- `react-player`は、HLSもYouTubeも同じように扱えて便利
+- 裏で`hls.js`を使ってるから、細かい設定も可能
+- Cookie認証を使うなら`xhr.withCredentials = true`が必須
+- サーバー側でもCORSの設定を忘れずに
+- v3では再生速度やボリュームを自分で管理する必要がある
 
-2. **HLS特有の課題と解決策**
-   - Cookie認証への対応: `xhr.withCredentials = true`の設定
+### 最終的なコード
 
-3. **本番環境での注意点**
-   - 再生速度やボリュームの状態管理
-
-4. **サーバー側の対応**
-   - CORSヘッダーの適切な設定
-   - `withCredentials`使用時のオリジン指定
-
-### 最終的な実装例
-
-以下が、本記事で解説した要素を全て含む完全な実装例です:
+ここまで説明した内容をまとめた実装がこちらです:
 
 ```tsx
 import { useState } from 'react'
@@ -406,4 +399,4 @@ export const VideoPlayer = ({ src, events }: Props) => {
 }
 ```
 
-本記事が、React環境でのHLS動画実装の参考になれば幸いです。
+ReactでHLS動画を実装するときの参考になれば嬉しいです。
