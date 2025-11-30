@@ -182,8 +182,6 @@ export const VideoPlayer = (props: Props) => {
 
 なお、react-playerはv3系が最新版ですが、v2からv3への移行では、プロパティ名の変更やコールバック関数の仕様変更など、多くの破壊的変更があります。既存のプロジェクトでv2を使用している場合は、公式の[Migration Guide](https://github.com/cookpete/react-player/blob/master/MIGRATING.md)を必ず確認してください。
 
-
-
 ### 動画の再生タイミングで処理を実行する
 
 動画の再生や一時停止、終了などのタイミングで処理を実行したい場合には、react-playerに用意されているイベントを使用します。
