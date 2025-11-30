@@ -27,7 +27,7 @@ HLS（HTTP Live Streaming）は、動画配信の仕組みのひとつです。
 
 さらにHLSは、ネットワークの速度に合わせて自動で画質を変えてくれる点も便利です。WiFiでも4G回線でも、それぞれの環境で快適に視聴できます。YouTubeやNetflixも、HLSや似たような技術（DASH）を使っています。
 
-## なぜreact-playerを選んだか
+## react-playerを選んだ理由
 
 HLS動画を実装する際、使用できそうなライブラリを調査したところ、以下の3つが候補に上がりました。
 
@@ -41,33 +41,25 @@ npm trendsで人気を比較すると、人気傾向は以下のようになっ�
 
 どれも人気があって実績のあるライブラリですが、最終的にreact-playerを選んだのは、次の3つの理由からです。
 
-### 1. Reactコンポーネントとしてビデオライブラリを提供している
+### 最初からReactコンポーネントとして使える
 
-react-playerは裏側で`hls.js`を使っています。`hls.js`は確かに強力なライブラリですが、それを直接Reactで使おうとすると、さまざまな実装が必要になります。
+react-playerを選んだ最大の理由は、低レイヤーの実装を気にせず、最初からReactコンポーネントとしてHLSを利用できる点です。
 
-例えば以下のような実装が必要です。
+react-playerは内部で`hls.js`を使用していますが、それをReactアプリケーションで使いやすい形にラップしてくれています。もし`hls.js`を直接使おうとすると、Reactのライフサイクルに合わせた実装を自分で書く必要があります。
 
-- コンポーネントのマウント時にHLSインスタンスを初期化
-- アンマウント時に適切にクリーンアップ
-- video要素への参照を管理
-- エラーハンドリングの実装
-- イベントリスナーの登録と解除
+react-playerを使えば、こういった低レイヤーの統合処理をすべて任せられます。開発者は動画プレーヤーのUI/UXや機能実装に集中できるのが大きなメリットです。
 
-こういったReactアプリケーションとの統合部分は、react-playerがすべて面倒を見てくれます。自分で実装すると地味に大変で、しかもバグが混入しやすい部分です。
-
-### 2. 必要な機能が揃っている
+### 動画プレーヤーに必要な機能が揃っている
 
 動画プレーヤーに必要な基本機能が、react-playerにはすべて揃っています。
 
-- **再生速度の変更**: `playbackRate`プロパティで0.5倍速から2倍速まで対応
-- **音量調整**: `volume`と`muted`プロパティで細かく制御可能
-- **全画面表示**: 標準のHTML要素として全画面表示が可能
+react-playerは内部でHTMLの`<video>`要素を使用しており、`playbackRate`、`volume`、`muted`といった標準的なプロパティを同名でそのまま使えます。
 
-厳密には、react-playerは内部でHTMLの`<video>`要素をラップしており、これらの設定は`video`要素が持つ`playbackRate`、`volume`、`muted`といったプロパティや`requestFullscreen()`のようなメソッドを通じて制御されています。プロパティを渡すだけで、動画プレーヤーに必要な機能を簡単に利用できます。
+例えば、再生速度を変更したい場合は`playbackRate`プロパティに値を渡すだけです。ブラウザ標準の`<video>`要素と同じプロパティ名なので、学習コストがほとんどかかりません。
 
-https://developer.mozilla.org/ja/docs/Web/HTML/Reference/Elements/video
+https://developer.mozilla.org/ja/docs/Web/API/HTMLMediaElement
 
-### 3. 高頻度でメンテナンスが行われている
+### 高頻度でメンテナンスが行われている
 
 react-playerは更新頻度も高く、適切にメンテナンスされているライブラリです。issueへの対応も比較的早く、実績も十分だと判断しました。
 
@@ -265,22 +257,17 @@ react-playerを使ったHLS動画プレーヤーの実装について、実際�
 
 ReactでHLS動画を実装するときの参考になれば嬉しいです。
 
-## PR
+### PR
 
 株式会社HRBrainでは、一緒に働く仲間を募集しています！
 興味を持っていただけた方はぜひ弊社の採用ページをご確認ください。
 
 https://www.hrbrain.co.jp/recruit
 
-## 参考
-
-### ライブラリ・リポジトリ
+### 参考資料
 
 https://github.com/cookpete/react-player
 https://github.com/video-dev/hls.js
 https://github.com/videojs/video.js
-
-### ドキュメント
-
 https://developer.mozilla.org/ja/docs/Web/HTML/Reference/Elements/video
 https://developer.mozilla.org/ja/docs/Web/API/XMLHttpRequest/withCredentials
