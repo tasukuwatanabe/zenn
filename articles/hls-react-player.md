@@ -7,6 +7,9 @@ published: false
 publication_name: "hrbrain"
 ---
 
+この記事はアドベントカレンダー4日目の記事です🎄🎅
+[HRBrain Advent Calendar 2025](https://adventar.org/calendars/12091)
+
 ## はじめに
 
 こんにちは。HRBrainで学習管理サービス[「HRBrain ラーニング」](https://www.hrbrain.jp/lms)を開発している渡邉です。
