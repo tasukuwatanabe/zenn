@@ -157,8 +157,8 @@ export const VideoPlayer = (props: Props) => {
     const handleVolumeChange = (event: React.SyntheticEvent<HTMLVideoElement>) => {
         setSettings(prev => ({
             ...prev,
-            muted: event.currentTarget.muted,
-            volume: event.currentTarget.volume
+            muted: event.currentTarget.muted,  // ミュートのON・OFFを切り替える
+            volume: event.currentTarget.volume // 音量の大きさを切り替える
         }))
     }
 
